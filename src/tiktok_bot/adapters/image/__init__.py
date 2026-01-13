@@ -1,0 +1,1 @@
+"""Image fetcher adapter implementations."""
