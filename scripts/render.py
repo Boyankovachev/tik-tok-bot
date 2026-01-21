@@ -33,8 +33,30 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--fps", type=int, default=None)
-    parser.add_argument("--image-duration", type=float, default=None)
-    parser.add_argument("--fade-duration", type=float, default=None)
+    parser.add_argument(
+        "--image-duration",
+        type=float,
+        default=None,
+        help="Ignored; per-image durations are hardcoded in timing_table.py.",
+    )
+    parser.add_argument(
+        "--fade-duration",
+        type=float,
+        default=None,
+        help="Ignored; fade is fixed at 0.2s when rendering.",
+    )
+    parser.add_argument(
+        "--music",
+        dest="include_music",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Include background music from the music directory.",
+    )
+    parser.add_argument(
+        "--music-dir",
+        default=None,
+        help="Directory containing background music files.",
+    )
     return parser.parse_args()
 
 
@@ -63,6 +85,17 @@ def main() -> None:
         ),
         fade_duration=(
             args.fade_duration if args.fade_duration is not None else file_config.fade_duration
+        ),
+        include_music=(
+            args.include_music
+            if args.include_music is not None
+            else file_config.include_music
+        ),
+        music_dir=resolve_relative(
+            Path(args.music_dir)
+            if args.music_dir is not None
+            else Path(file_config.music_dir),
+            ROOT,
         ),
     )
     renderer = MoviePyRenderer()

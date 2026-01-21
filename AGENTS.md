@@ -1,53 +1,51 @@
-Project overview
+﻿Project overview
 
-- Purpose: Build an autonomous TikTok content bot. It will eventually read a schedule, fetch data/images, render a video, create descriptions, and upload to TikTok. Current focus is step 3 (image-to-video) plus image fetching.
-- Design: Modular, port/adapter style so future DB/storage/scheduler/tiktok integrations can plug in without rewrites. Workflows orchestrate; adapters talk to external systems.
+- Purpose: Build an autonomous TikTok content bot. Long term it will read a schedule, fetch data and images, render a video, create descriptions, and upload to TikTok. Current focus is image fetching plus image-to-video rendering.
+- Design: Modular port/adapter style so future database, storage, scheduler, and TikTok integrations can plug in without rewrites. Workflows orchestrate; adapters talk to external systems.
 
-Current features
+How it works (end-to-end)
 
-- Image download via icrawler based on a keyword.
-- Video rendering from a folder of images using MoviePy with 9:16 framing.
-- CSV schedule for planned posts with a helper script to fill missing images.
+- Image fetch flow: `scripts/fetch_images.py` builds an ImageFetchRequest, calls the fetch_images workflow, and the ICrawlerImageFetcher downloads images into `assets/images/<keyword>`.
+- Render flow: `scripts/render.py` builds a RenderRequest, calls the build_video workflow, applies slideshow timing rules from hardcoded values in `src/tiktok_bot/utils/timing_table.py` (clamped 3-10 images, fade fixed at 0.2s), optionally embeds random background music from `assets/music` (enabled by default), and the MoviePyRenderer renders an MP4 (default `outputs/renders/render.mp4`).
+- Fetch + render: `scripts/fetch_and_render.py` runs the fetch flow then the render flow with the same keyword, outputting `outputs/renders/<keyword>.mp4`.
+- Schedule helper: `scripts/fetch_missing_images.py` reads `schedule.csv`, downloads missing images for rows without images, and updates the `Has images` column to `YES`.
+- Random location fetch + render: `scripts/fetch_random_location.py` calls `/api/v1/social-media`, downloads `imageUrls` into `assets/images/<name>`, and renders `outputs/renders/<name>.mp4`.
 
-Key folders and how they relate
+Key folders and file relationships
 
-- src/tiktok_bot/domain: data models for render and fetch requests.
-  - models.py: RenderConfig/RenderRequest and ImageFetchRequest.
-- src/tiktok_bot/ports: interfaces (protocols) for adapters.
-  - video.py: VideoRenderer interface for rendering.
-  - image_fetcher.py: ImageFetcher interface for downloading images.
-- src/tiktok_bot/adapters: concrete implementations.
-  - video/moviepy_impl.py: MoviePyRenderer that crops to 1080x1920 and renders mp4.
-  - image/icrawler_impl.py: ICrawlerImageFetcher that downloads images via Bing/Google/Baidu.
-- src/tiktok_bot/workflows: orchestration logic.
-  - build_video.py: takes a folder of images + config and calls a VideoRenderer.
-  - fetch_images.py: takes a keyword and calls an ImageFetcher, placing images in a folder.
-- src/tiktok_bot/utils:
-  - paths.py: image discovery, safe folder names, resolving relative paths.
-  - config.py: reads config.ini render defaults.
-  - schedule.py: CSV loading/saving and simple truthy parsing for schedule updates.
-
-Scripts (CLI entrypoints)
-
-- scripts/render.py: render a video from assets/images using config.ini defaults; CLI overrides available.
-- scripts/fetch_images.py: download images for a keyword into assets/images/<keyword>.
-- scripts/fetch_and_render.py: download then render to outputs/renders/<keyword>.mp4.
-- scripts/fetch_missing_images.py: scan schedule.csv, download missing images, and update Has images to YES.
+- Domain (data models): `src/tiktok_bot/domain/models.py`
+  - RenderConfig, RenderRequest, and ImageFetchRequest are the core data contracts passed between layers.
+- Ports (interfaces/protocols): `src/tiktok_bot/ports/video.py`, `src/tiktok_bot/ports/image_fetcher.py`
+  - VideoRenderer defines the render API used by workflows.
+  - ImageFetcher defines the download API used by workflows.
+- Adapters (implementations):
+  - `src/tiktok_bot/adapters/video/moviepy_impl.py` implements VideoRenderer using MoviePy. It crops to 1080x1920 (9:16), optionally adds a random music track from `assets/music` (trimmed or looped to match video length), and renders MP4. It includes a Pillow 10+ compatibility shim.
+  - `src/tiktok_bot/adapters/image/icrawler_impl.py` implements ImageFetcher using icrawler and supports Bing/Google/Baidu.
+- Workflows (orchestration):
+  - `src/tiktok_bot/workflows/build_video.py` ties a RenderRequest to a VideoRenderer.
+  - `src/tiktok_bot/workflows/fetch_images.py` ties an ImageFetchRequest to an ImageFetcher.
+- Utils:
+  - `src/tiktok_bot/utils/paths.py` handles image discovery, safe folder names, and relative path resolution.
+  - `src/tiktok_bot/utils/config.py` reads `config.ini` render defaults and the server base URL.
+  - `src/tiktok_bot/utils/schedule.py` loads/saves the CSV schedule and parses truthy values.
+  - `src/tiktok_bot/utils/timing_table.py` defines the hardcoded slideshow timing table and resolves per-image durations with 3-10 clamping and a fixed 0.2s fade.
+- Scripts (CLI entrypoints):
+  - `scripts/render.py`, `scripts/fetch_images.py`, `scripts/fetch_and_render.py`, `scripts/fetch_missing_images.py`, `scripts/fetch_random_location.py` wire CLI args to workflows or server calls and rendering.
 
 Project data files
 
-- config.ini: default render settings (TikTok-friendly defaults).
-- schedule.csv: schedule table with columns Name, Run at, Description, Has images, Uploaded.
-- assets/images: input image folders (ignored by git).
-- outputs/renders: rendered videos (ignored by git).
-
-Workflow notes
-
-- Image folders are expected under assets/images/<name>. The <name> is the keyword or schedule Name.
-- Video output goes to outputs/renders/<name>.mp4 or a custom path.
-- MoviePy relies on Pillow; a compatibility shim exists in moviepy_impl.py for Pillow 10+.
+- `config.ini`: default render settings (TikTok-friendly defaults) and the server base URL; CLI args override these.
+- `schedule.csv`: schedule table with columns Name, Run at, Description, Has images, Uploaded.
+- `tiktok_slideshow_timing_table.xlsx`: reference table for timing values (not read at runtime).
+- `assets/music`: optional background music files (mp3/m4a/etc).
+- `assets/images`: input image folders (ignored by git).
+- `outputs/renders`: rendered videos (ignored by git).
 
 Environment notes
 
 - Use Python 3.12. Python 3.14 fails to install Pillow wheels on Windows.
-- Activate the project venv before running scripts: .\.venv\Scripts\Activate.ps1.
+- Activate the project venv before running scripts: `./.venv/Scripts/Activate.ps1`.
+
+Agent maintenance
+
+- If you change code behavior, file relationships, or scripts/configs, update this document to match the new reality.

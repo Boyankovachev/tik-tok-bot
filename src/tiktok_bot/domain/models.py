@@ -10,6 +10,8 @@ class RenderConfig:
     fps: int = 30
     image_duration: float = 2.0
     fade_duration: float = 0.2
+    include_music: bool = True
+    music_dir: Path = Path("assets/music")
 
 
 @dataclass(frozen=True)
